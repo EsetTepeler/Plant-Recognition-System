@@ -16,8 +16,8 @@ async def lifespan(app: FastAPI):
     New architecture: Kaggle + PlantNet + USDA + LLM
     """
     # Startup
-    logger.info("🚀 Starting Plant Recognition System...")
-    logger.info("📊 Architecture: Kaggle API + PlantNet + USDA (93K) + LLM")
+    logger.info("Starting Plant Recognition System...")
+    logger.info(" Architecture: Kaggle API + PlantNet + USDA (93K) + LLM")
 
     # Connect to Redis (optional - for caching and rate limiting)
     try:
@@ -26,9 +26,9 @@ async def lifespan(app: FastAPI):
         logger.info("Connecting to Redis...")
         await redis_service.connect()
         if redis_service.is_connected:
-            logger.info("✅ Redis connected - using distributed cache")
+            logger.info("Redis connected - using distributed cache")
         else:
-            logger.info("⚠️  Redis not available - using in-memory fallback")
+            logger.info("Redis not available - using in-memory fallback")
     except Exception as e:
         logger.warning(f"Redis connection failed: {e} - using in-memory fallback")
 
@@ -38,9 +38,9 @@ async def lifespan(app: FastAPI):
 
         count = usda_service.get_count()
         if count > 0:
-            logger.info(f"✅ USDA Weaviate: {count} plants available")
+            logger.info(f" USDA Weaviate: {count} plants available")
         else:
-            logger.warning("⚠️  USDA not in Weaviate - run import_usda_to_weaviate.py")
+            logger.warning(" USDA not in Weaviate - run import_usda_to_weaviate.py")
     except Exception as e:
         logger.error(f"USDA service error: {e}")
 
@@ -50,28 +50,28 @@ async def lifespan(app: FastAPI):
 
         if kaggle_notebook_service.notebook_url:
             logger.info(
-                f"✅ Kaggle API configured: {kaggle_notebook_service.notebook_url[:50]}..."
+                f" Kaggle API configured: {kaggle_notebook_service.notebook_url[:50]}..."
             )
         else:
             logger.warning(
-                "⚠️  Kaggle API not configured - image recognition may be limited"
+                " Kaggle API not configured - image recognition may be limited"
             )
     except Exception as e:
         logger.error(f"Kaggle service error: {e}")
 
     # Check PlantNet API
     if settings.PLANTNET_API_KEY:
-        logger.info("✅ PlantNet API configured")
+        logger.info(" PlantNet API configured")
     else:
-        logger.warning("⚠️  PlantNet API key not set")
+        logger.warning(" PlantNet API key not set")
 
     # Check LLM API
     if settings.GOOGLE_AI_STUDIO_API_KEY:
-        logger.info("✅ LLM: Google AI Studio (Gemini)")
+        logger.info(" LLM: Google AI Studio (Gemini)")
     elif settings.OPENROUTER_API_KEY:
-        logger.info("✅ LLM: OpenRouter")
+        logger.info(" LLM: OpenRouter")
     else:
-        logger.warning("⚠️  No LLM API configured")
+        logger.warning(" No LLM API configured")
 
     logger.info("🌿 Application initialization completed")
 
@@ -85,11 +85,11 @@ async def lifespan(app: FastAPI):
         from app.services.redis_service import redis_service
 
         await redis_service.disconnect()
-        logger.info("✅ Redis disconnected")
+        logger.info(" Redis disconnected")
     except Exception as e:
         logger.error(f"Redis disconnect error: {e}")
 
-    logger.info("👋 Application shutdown complete")
+    logger.info(" Application shutdown complete")
 
 
 app = FastAPI(

@@ -68,8 +68,14 @@ async def health_check():
             "message": "Set PLANTNET_API_KEY in .env",
         }
 
-    # LLM check (Gemini or Grok)
-    if settings.GOOGLE_AI_STUDIO_API_KEY:
+    # LLM check (GitHub Models GPT-5 > Gemini > Grok)
+    if settings.GITHUB_TOKEN:
+        health_status["services"]["llm"] = {
+            "status": "configured",
+            "provider": "GitHub Models GPT-5",
+            "model": settings.GITHUB_MODELS_MODEL,
+        }
+    elif settings.GOOGLE_AI_STUDIO_API_KEY:
         health_status["services"]["llm"] = {
             "status": "configured",
             "provider": "Google Gemini",
@@ -81,8 +87,8 @@ async def health_check():
         }
     else:
         health_status["services"]["llm"] = {
-            "status": "not_configured",
-            "message": "Set GOOGLE_AI_STUDIO_API_KEY or GROK_API_KEY",
+            "status": "template_fallback",
+            "message": "No LLM configured - using template responses",
         }
 
     # Redis check

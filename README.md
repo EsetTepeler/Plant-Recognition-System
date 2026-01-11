@@ -16,15 +16,17 @@ This system combines computer vision, vector databases, and large language model
 ## ✨ Özellikler / Key Features
 
 ### 🔬 Görüntü Tanıma / Image Recognition
-- **Kaggle PlantCLEF API** - 1.5TB+ uzak veri seti ile bitki tanıma (Gradio API)
-- **PlantNet API** - Genel bitki bilgisi ve doğrulama
+- **Weighted Ensemble System** - 60% Kaggle + 40% PlantNet ağırlıklı birleştirme
+- **Kaggle PlantCLEF API** - CLIP Zero-Shot Classification ile 1.5TB+ dataset
+- **PlantNet API** - İkincil tanıma kaynağı (40% ağırlık)
+- **Plant.id API** - Tanımladıktan sonra bilgi zenginleştirme (scientific name ile)
 - **CLIP Embeddings** - OpenAI CLIP (ViT-B/32) modeliyle 512-boyutlu görsel benzerlik arama
-- **Test-Time Augmentation (TTA)** - Çoklu kırpma stratejisi (center + 4 corners) ile yüksek doğruluk
-- **Advanced Image Preprocessing**:
-  - `fastNlMeansDenoisingColored` - Gürültü azaltma (OpenCV)
-  - Sharpness Enhancement - Kenar netleştirme
-  - Auto Contrast - Otomatik kontrast ayarı
-  - Color Enhancement - Bitki renklerini canlılaştırma
+- **Test-Time Augmentation (TTA)** - Çoklu kırpma stratejisi (center + 4 corners)
+- **Advanced Image Preprocessing (PIL-based)**:
+  - Noise Reduction - `ImageFilter.MedianFilter` ile gürültü azaltma
+  - Sharpness Enhancement - `ImageEnhance.Sharpness` (1.3x)
+  - Auto Contrast - `ImageEnhance.Contrast` (1.2x)
+  - Color Enhancement - `ImageEnhance.Color` (1.1x)
 - **USDA Verification** - Tanımlanan bitkiler USDA veritabanında doğrulanıyor
 
 ### 🗄️ Veritabanı Sistemi / Database System
@@ -35,10 +37,11 @@ This system combines computer vision, vector databases, and large language model
 
 ### 💬 Chatbot Arayüzü / Chatbot Interface
 - **Hybrid RAG Pipeline** - Kaggle + PlantNet + USDA + LLM
-- **Çoklu LLM Desteği**:
-  - Google Gemini (gemini-2.0-flash-exp) - Tercih edilen
-  - OpenRouter (nvidia/nemotron-nano-9b-v2:free) - Fallback
-  - Template-based - LLM olmadan çalışabilme
+- **Çoklu LLM Desteği** (Fallback sıralaması):
+  1. **GPT-5 via GitHub Models** - Tercih edilen (GITHUB_TOKEN ile)
+  2. Google Gemini (gemini-2.0-flash-exp) - Alternatif
+  3. OpenRouter / XAI Grok - Opsiyonel
+  4. Template-based - LLM olmadan çalışabilme
 - **Görüntülü Sohbet** - Bitki görseli + soru ile kombine analiz
 - **Konuşma Geçmişi** - Session-based konuşma takibi
 - **Türkçe Dil Desteği** - Yanıtlar Türkçe olarak üretilir
@@ -46,15 +49,25 @@ This system combines computer vision, vector databases, and large language model
 ### 🔒 Güvenlik ve Performans / Security & Performance
 - **6 Katmanlı Güvenlik**:
   1. API Key Authentication (isteğe bağlı)
-  2. Rate Limiting (Redis/in-memory, 10 req/min)
+  2. Rate Limiting (Redis/in-memory fallback)
+     - Standard: 10 req/min
+     - Strict: 5 req/min (pahalı işlemler için)
   3. Image Size Check (max 10MB)
   4. MIME Type Verification
   5. Magic Bytes Validation (JPEG/PNG/WebP header kontrolü)
-  6. PIL Exploit Detection + Content Sanitization
+  6. PIL Exploit Detection + Content Sanitization (konfigüre edilebilir)
+- **Client ID Detection** - X-Forwarded-For header + User ID desteği
 - **Image Hash** - SHA256 ile duplicate tespiti
 - **Text Sanitization** - SQL injection ve XSS önleme
 - **GZip Compression** - Büyük yanıtlar için sıkıştırma (>1000 bytes)
 - **CORS Configuration** - Çoklu origin desteği
+
+### 🚀 Caching Sistemi / Caching System
+- **Redis (Birincil)**:
+  - JSON cache operations (`get_json` / `set_json`)
+  - Rate limiting counter (`increment`)
+  - TTL desteği (varsayılan: 1 saat)
+- **In-Memory Fallback** - Redis yoksa otomatik in-memory cache
 
 ### 🖼️ Desteklenen Görüntü Formatları
 - JPEG / JPG
@@ -79,13 +92,14 @@ This system combines computer vision, vector databases, and large language model
 ### Backend
 | Kategori | Teknoloji |
 |----------|-----------|
-| **Framework** | FastAPI + Uvicorn |
-| **Database** | PostgreSQL + SQLAlchemy |
-| **Vector DB** | Weaviate Cloud (v3 API) |
+| **Framework** | FastAPI + Uvicorn (ASGI) |
+| **Database** | PostgreSQL + SQLAlchemy ORM |
+| **Vector DB** | Weaviate Cloud (v3 API, gRPC desteği) |
 | **AI/ML** | CLIP (openai/clip-vit-base-patch32), PyTorch, Transformers |
-| **Görüntü İşleme** | OpenCV, Pillow, TensorFlow Image |
-| **Caching** | Redis (async) |
+| **Görüntü İşleme** | Pillow (PIL), ImageEnhance, ImageFilter |
+| **Caching** | Redis (async) + In-memory fallback |
 | **Validation** | Pydantic v2 |
+| **Security** | Custom rate limiting, Image validation |
 
 ### Frontend
 | Kategori | Teknoloji |
@@ -96,6 +110,7 @@ This system combines computer vision, vector databases, and large language model
 | **HTTP Client** | Axios (interceptors ile hata yönetimi) |
 | **File Upload** | react-dropzone (drag & drop) |
 | **State Management** | Custom hooks (usePlantChat) |
+| **Design** | Animated backgrounds, Glassmorphism effects |
 
 ### Frontend Bileşenleri / Components
 | Component | Açıklama |
@@ -104,7 +119,16 @@ This system combines computer vision, vector databases, and large language model
 | `PlantChatSection` | Mesajlaşma arayüzü |
 | `PlantContextCard` | Tanımlanan bitki bilgi kartı |
 | `PlantMessageItem` | Tek mesaj görüntüleme |
+| `PlantImageUploadSection` | Görüntü yükleme alanı |
 | `Navigation` | App bar ve routing |
+
+### Frontend Sayfaları / Pages
+| Page | Açıklama |
+|------|----------|
+| `HomePage` | Ana sayfa, landing page |
+| `InteractivePlantPage` | Birleşik bitki asistanı |
+| `RecognitionPage` | Bitki tanıma sayfası (→ /assistant) |
+| `ChatbotPage` | Chatbot sayfası (→ /assistant) |
 
 ### Infrastructure
 | Kategori | Teknoloji |
@@ -118,10 +142,49 @@ This system combines computer vision, vector databases, and large language model
 ### Veri Kaynakları / Data Sources
 | Kaynak | Açıklama |
 |--------|----------|
-| **PlantCLEF 2025** | Kaggle dataset (1.5TB) - Gradio API ile uzak inference |
-| **PlantNet API** | Görüntü tanıma, common names, family bilgisi |
+| **PlantCLEF 2025** | Kaggle dataset (1.5TB) - CLIP Zero-Shot Classification |
+| **PlantNet API** | İkincil tanıma (40% ağırlık), common names, family bilgisi |
+| **Plant.id API** | Bilgi zenginleştirme (description, taxonomy, watering) |
 | **USDA Plants Database** | 93,158 bitki türü (symbol, scientific name, common name, family) |
 | **GBIF** | Global Biodiversity Information Facility ID entegrasyonu |
+
+### 🔄 Weighted Ensemble RAG Pipeline
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                        USER UPLOADS IMAGE                               │
+└────────────────────────────────┬────────────────────────────────────────┘
+                                 ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│ STEP 1: PARALLEL IDENTIFICATION                                         │
+│                                                                          │
+│  ┌──────────────────────┐      ┌──────────────────────┐                 │
+│  │   Kaggle PlantCLEF   │      │     PlantNet API     │                 │
+│  │   (CLIP Zero-Shot)   │      │   (Secondary Source) │                 │
+│  │      60% Weight      │      │      40% Weight      │                 │
+│  └──────────┬───────────┘      └──────────┬───────────┘                 │
+│             │                              │                             │
+│             └──────────┬───────────────────┘                             │
+│                        ▼                                                 │
+│ STEP 2: WEIGHTED ENSEMBLE                                                │
+│  weighted_score = (kaggle × 0.6) + (plantnet × 0.4)                     │
+│                        │                                                 │
+│                        ▼                                                 │
+│ STEP 3: USDA VERIFICATION                                                │
+│  - Validate scientific names                                             │
+│  - Enrich with family, common name                                       │
+│                        │                                                 │
+│                        ▼                                                 │
+│ STEP 3.5: PLANT.ID ENRICHMENT                                            │
+│  - GET /kb/plants/{scientific_name}                                      │
+│  - Add description, taxonomy, watering info                              │
+│                        │                                                 │
+│                        ▼                                                 │
+│ STEP 4: GPT-5 RAG RESPONSE                                               │
+│  - Context: All sources + weighted scores                                │
+│  - Turkish natural language explanation                                  │
+└─────────────────────────────────────────────────────────────────────────┘
+```
 
 ---
 
@@ -137,6 +200,7 @@ This system combines computer vision, vector databases, and large language model
 │  └──────────────┘  └──────────────────────┘                     │
 │                                                                   │
 │         React.js + Material-UI Frontend (Port 3000)              │
+│         ✨ Animated Backgrounds + Glassmorphism UI               │
 └───────────────────────────┬───────────────────────────────────────┘
                             │ HTTP/REST API
                             ▼
@@ -159,6 +223,11 @@ This system combines computer vision, vector databases, and large language model
 │  │  │ Service  │ │ Service  │ │ Service  │ │  Repository │  │  │
 │  │  └──────────┘ └──────────┘ └──────────┘ └─────────────┘  │  │
 │  └───────────────────────────────────────────────────────────┘  │
+│                                                                   │
+│  ┌───────────────────────────────────────────────────────────┐  │
+│  │                   SECURITY LAYER                            │  │
+│  │  Rate Limiter (10/5 req/min) │ Image Validation │ Auth     │  │
+│  └───────────────────────────────────────────────────────────┘  │
 └───────────────────┬──────────────────────┬──────────────────────┘
                     │                      │
         ┌───────────┴─────────┐   ┌────────┴─────────┐
@@ -168,10 +237,11 @@ This system combines computer vision, vector databases, and large language model
 │  (Metadata)   │    │  Vector Store    │    │     APIs     │
 │   Port 5432   │    │   (Cloud)        │    │              │
 └───────────────┘    └──────────────────┘    │ - PlantNet   │
-                                             │ - Kaggle     │
-                                             │ - Google AI  │
-                                             │ - OpenRouter │
-                                             └──────────────┘
+       ↑                                      │ - Kaggle     │
+       │             ┌──────────────────┐    │ - Google AI  │
+       └─────────────│     Redis        │    │ - OpenRouter │
+                     │   (Cache/Rate)   │    │ - XAI Grok   │
+                     └──────────────────┘    └──────────────┘
 ```
 
 ---
@@ -184,15 +254,15 @@ Plant-Recognition-System/
 │   ├── app/
 │   │   ├── api/                      # API Endpoints
 │   │   │   ├── __init__.py           # Router exports
-│   │   │   ├── health.py             # Health check endpoints
+│   │   │   ├── health.py             # Health check endpoints (/health, /status)
 │   │   │   ├── plant_recognition.py  # Plant recognition endpoint
 │   │   │   └── chatbot.py            # Chat endpoints (text + image)
 │   │   │
 │   │   ├── core/                     # Core Modules
 │   │   │   ├── config.py             # Pydantic settings & env vars
-│   │   │   ├── exceptions.py         # Custom exception classes
-│   │   │   ├── rate_limiter.py       # Redis/in-memory rate limiting
-│   │   │   └── security.py           # Image validation & auth
+│   │   │   ├── exceptions.py         # 7 custom exception classes
+│   │   │   ├── rate_limiter.py       # Redis/in-memory rate limiting (10/5 req/min)
+│   │   │   └── security.py           # Image validation & auth (6-layer)
 │   │   │
 │   │   ├── db/                       # Database
 │   │   │   └── base.py               # SQLAlchemy base & session
@@ -201,14 +271,14 @@ Plant-Recognition-System/
 │   │   │   └── plant.py              # Plant & UserQuery models
 │   │   │
 │   │   ├── services/                 # Business Logic Services
-│   │   │   ├── clip_service.py       # CLIP embeddings + preprocessing
-│   │   │   ├── weaviate_service.py   # Vector DB operations
+│   │   │   ├── clip_service.py       # CLIP embeddings + PIL preprocessing + TTA
+│   │   │   ├── weaviate_service.py   # Vector DB operations (gRPC support)
 │   │   │   ├── plantnet_service.py   # PlantNet API integration
 │   │   │   ├── usda_service.py       # USDA plants from Weaviate
 │   │   │   ├── kaggle_notebook_service.py  # Kaggle Gradio API
 │   │   │   ├── kaggle_service.py     # Kaggle dataset operations
 │   │   │   ├── grok_service.py       # LLM/Template responses
-│   │   │   ├── redis_service.py      # Redis caching operations
+│   │   │   ├── redis_service.py      # Redis caching (JSON, counter, TTL)
 │   │   │   └── plant_repository.py   # PostgreSQL plant CRUD
 │   │   │
 │   │   ├── utils/                    # Utilities
@@ -241,20 +311,24 @@ Plant-Recognition-System/
 │   │   │
 │   │   ├── pages/                    # Page Components
 │   │   │   ├── HomePage.js           # Landing page
-│   │   │   ├── InteractivePlantPage.js  # Main assistant
-│   │   │   ├── RecognitionPage.js    # Recognition page
-│   │   │   └── ChatbotPage.js        # Chatbot page
+│   │   │   ├── InteractivePlantPage.js  # Main assistant (unified)
+│   │   │   ├── RecognitionPage.js    # → Redirects to /assistant
+│   │   │   └── ChatbotPage.js        # → Redirects to /assistant
 │   │   │
 │   │   ├── hooks/                    # Custom Hooks
 │   │   │   └── usePlantChat.js       # Chat state management
 │   │   │
 │   │   ├── services/                 # API Services
-│   │   │   └── api.js                # Axios API client
+│   │   │   └── api.js                # Axios API client + health check
 │   │   │
-│   │   ├── App.js                    # Main app component
+│   │   ├── styles/
+│   │   │   └── global.css            # Global styles
+│   │   │
+│   │   ├── App.js                    # Main app + animated background
 │   │   └── index.js                  # React entry point
 │   │
 │   ├── public/                       # Static files
+│   │   └── logo.jpg                  # App logo
 │   ├── package.json                  # Node dependencies
 │   └── Dockerfile                    # Frontend container
 │
@@ -262,7 +336,8 @@ Plant-Recognition-System/
 │   ├── ARCHITECTURE.md               # System architecture
 │   ├── RAG_PIPELINE.md               # RAG pipeline details
 │   ├── DEVELOPMENT.md                # Development guide
-│   └── KAGGLE_INTEGRATION.md         # Kaggle setup guide
+│   ├── KAGGLE_INTEGRATION.md         # Kaggle setup guide
+│   └── *.png                         # Performance charts
 │
 ├── kaggle_notebook/                  # Kaggle Notebook Files
 │   └── PlantCLEF_Inference_API.ipynb # Gradio inference API
@@ -286,7 +361,8 @@ Plant-Recognition-System/
 ### Health Endpoints
 ```
 GET /api/v1/health     - Comprehensive health check (all services)
-                         Returns: USDA status, Kaggle status, PlantNet status, LLM status, Redis status
+                         Returns: USDA status, Kaggle status, PlantNet status, 
+                                  LLM status (Gemini/Grok/OpenRouter), Redis status
 
 GET /api/v1/status     - Simple status check
                          Returns: { status: "ok", timestamp }
@@ -314,7 +390,10 @@ POST /api/v1/chat-with-image
 - Content-Type: multipart/form-data
 - Body: file (image), message (string), session_id? (string)
 - Headers: X-API-Key (optional, if REQUIRE_API_KEY=true)
-- Security: Rate limited (10 req/min), Image validation, Text sanitization
+- Security: 
+  - Rate limited (10 req/min standard, 5 req/min strict)
+  - 6-layer image validation
+  - Text sanitization
 - Pipeline:
   1. Kaggle PlantCLEF API → Image identification
   2. PlantNet API → General plant info
@@ -364,7 +443,8 @@ GET /api/v1/conversation-history/{session_id}
 - Node.js 18+
 - API Keys:
   - PlantNet API key (https://my.plantnet.org/)
-  - Google AI Studio API key (veya OpenRouter)
+  - Plant.id API key (https://plant.id/) - Bilgi zenginleştirme için
+  - GitHub PAT with Models access (https://github.com/settings/tokens) - GPT-5 için
   - Weaviate Cloud API key (https://weaviate.io/cloud)
 
 ### Installation
@@ -450,18 +530,27 @@ WEAVIATE_URL=https://YOUR_CLUSTER.weaviate.cloud
 WEAVIATE_API_KEY=YOUR_WEAVIATE_API_KEY
 WEAVIATE_GRPC_HOST=grpc-YOUR_CLUSTER.weaviate.cloud
 
-# PlantNet API
+# PlantNet API (40% weight in ensemble)
 PLANTNET_API_KEY=your_plantnet_api_key_here
 
-# LLM Options (pick one)
-GOOGLE_AI_STUDIO_API_KEY=your_google_ai_studio_key  # Preferred
-OPENROUTER_API_KEY=your_openrouter_api_key          # Fallback
-OPENROUTER_MODEL=nvidia/nemotron-nano-9b-v2:free
+# Plant.id API (info enrichment by scientific name)
+PLANT_ID_KEY=your_plant_id_api_key
+PLANT_ID_URL=https://plant.id/api/v3
 
-# Kaggle Notebook (for PlantCLEF remote inference)
-KAGGLE_NOTEBOOK_URL=https://your-kaggle-notebook-api-url
+# LLM Options (priority order: GitHub GPT-5 > Gemini > OpenRouter > Template)
+GITHUB_TOKEN=your_github_personal_access_token   # Preferred - GPT-5
+GITHUB_MODELS_MODEL=gpt-5                         # gpt-5, gpt-5-mini, gpt-5-nano
+GOOGLE_AI_STUDIO_API_KEY=your_google_ai_studio_key  # Fallback 1
+OPENROUTER_API_KEY=your_openrouter_api_key          # Fallback 2
 
-# Redis (Optional - for production)
+# Weighted Ensemble (adjust weights in config.py)
+KAGGLE_WEIGHT=0.6   # 60%
+PLANTNET_WEIGHT=0.4 # 40%
+
+# Kaggle Notebook (CLIP Zero-Shot Classification)
+KAGGLE_NOTEBOOK_URL=https://your-kaggle-notebook.gradio.live
+
+# Redis (Optional - for production, falls back to in-memory)
 REDIS_URL=redis://localhost:6379/0
 REDIS_PASSWORD=
 REDIS_DB=0
@@ -469,8 +558,10 @@ REDIS_DB=0
 # Security
 REQUIRE_API_KEY=false
 VALID_API_KEYS=key1,key2
-RATE_LIMIT_REQUESTS=10
-RATE_LIMIT_WINDOW=60
+RATE_LIMIT_REQUESTS=10        # Standard rate limit
+RATE_LIMIT_WINDOW=60          # Window in seconds
+MAX_IMAGE_SIZE_MB=10          # Maximum image size
+ENABLE_IMAGE_SANITIZATION=true
 
 # CORS
 ALLOWED_ORIGINS=http://localhost:3000,http://localhost:5173
@@ -517,10 +608,10 @@ User Image Upload
 │              STEP 3: LLM RESPONSE GENERATION               │
 │                                                            │
 │  ┌────────────────────────────────────────────────────┐   │
-│  │  Google Gemini / OpenRouter / Template-based        │   │
+│  │  Google Gemini / OpenRouter / XAI Grok / Template   │   │
 │  │                                                      │   │
 │  │  Input: Context + User Question + Plant Data         │   │
-│  │  Output: Natural Language Response                   │   │
+│  │  Output: Natural Language Response (Turkish)         │   │
 │  └────────────────────────────────────────────────────┘   │
 └───────────────────────────────────────────────────────────┘
 ```
@@ -533,6 +624,8 @@ User Image Upload
 |-----------|---------|-------|
 | Image upload | ~50ms | FormData binary |
 | CLIP encoding | ~200ms | CPU, ~50ms GPU |
+| Image preprocessing | ~30ms | PIL-based (denoise, sharpen, contrast, color) |
+| TTA (multi-crop) | ~100ms | 5 crops averaged |
 | Kaggle API | ~3-5s | Remote inference |
 | PlantNet API | ~1-2s | External API |
 | USDA search | ~20ms | Weaviate Cloud |
@@ -551,6 +644,12 @@ pytest
 # Frontend tests
 cd frontend
 npm test
+
+# Weaviate connection test
+python scripts/test_weaviate.py
+
+# USDA search test
+python scripts/test_search_only.py
 ```
 
 ---
@@ -566,22 +665,14 @@ Detaylı dokümantasyon için `Rediractions/` klasörüne bakın:
 
 ---
 
-## 🔮 Future Improvements
-
-- [ ] Streaming LLM responses
-- [ ] Multi-language support
-- [ ] Offline mode with cached data
-- [ ] Mobile app (React Native)
-- [ ] Fine-tuned CLIP on PlantCLEF
-- [ ] Batch image processing
-- [ ] User authentication & history
-
----
-
 ## 👥 Yazar / Author
 
 - **Muhammed Esettepeler**
 - GitHub: [@muhammedesettepeler-cpu](https://github.com/muhammedesettepeler-cpu)
+- **Ramazan Buğra Şahin**
+- GitHub: [@BgraShin](https://github.com/BgraShin)
+- **Mehmet Han Güldemir**
+- GitHub: [@mehmet-han-guldemir](https://github.com/mehmet-han-guldemir)
 
 ---
 
@@ -593,4 +684,4 @@ This project is licensed under the FSMVU License.
 
 **Not**: Bu, modern AI teknolojilerinin botanik uygulamalarına entegrasyonunu göstermek için geliştirilmiş eğitici bir projedir.
 
-*Powered by CLIP, Weaviate, PlantNet, Kaggle PlantCLEF & Google Gemini*
+*Powered by CLIP, Weaviate, PlantNet, Kaggle PlantCLEF, Google Gemini & OpenRouter*

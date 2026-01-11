@@ -14,6 +14,7 @@ from datetime import datetime, UTC
 from app.services.grok_service import grok_service
 from app.services.kaggle_notebook_service import kaggle_notebook_service
 from app.services.plantnet_service import plantnet_service
+from app.services.plant_id_service import plant_id_service
 from app.services.usda_service import usda_service
 from app.core.security import ImageSecurity, AuthSecurity
 from app.core.rate_limiter import rate_limiter
@@ -152,113 +153,171 @@ async def chat_with_image(
             logger.warning(f"⚠️ PlantNet API failed: {e}")
 
         # ═══════════════════════════════════════════════════════════════
-        # STEP 3: COMBINE & VALIDATE WITH USDA
+        # STEP 3: WEIGHTED ENSEMBLE - Combine results with configurable weights
         # ═══════════════════════════════════════════════════════════════
-        combined_results = []
+        logger.info(
+            f"🔄 Merging results with weights: Kaggle={settings.KAGGLE_WEIGHT:.0%}, PlantNet={settings.PLANTNET_WEIGHT:.0%}"
+        )
 
-        # Merge results: prioritize Kaggle for identification, PlantNet for info
-        primary_source = kaggle_results if kaggle_results else plantnet_results
+        # Collect all unique plants with weighted scores
+        plant_scores = {}  # {scientific_name: {data, kaggle_score, plantnet_score, weighted_score}}
 
-        # Ensure primary_source is a list (not None or dict)
-        if primary_source is None:
-            primary_source = []
-        elif isinstance(primary_source, dict):
-            primary_source = [primary_source]
-        elif not isinstance(primary_source, list):
-            primary_source = []
+        # Process Kaggle results
+        for result in (kaggle_results or [])[:5]:
+            if not isinstance(result, dict):
+                continue
+            name = result.get(
+                "scientificName", result.get("scientific_name", "")
+            ).strip()
+            if not name:
+                continue
 
-        for result in list(primary_source)[:5]:
-            scientific_name = result.get(
-                "scientificName", result.get("scientific_name", "Unknown")
+            score = result.get("certainty", result.get("score", 0))
+            if name not in plant_scores:
+                plant_scores[name] = {
+                    "scientificName": name,
+                    "commonName": result.get(
+                        "commonName", result.get("common_name", "")
+                    ),
+                    "family": result.get("family", ""),
+                    "kaggle_score": score,
+                    "plantnet_score": 0,
+                    "source": "kaggle-plantclef",
+                    "usda_verified": False,
+                }
+            else:
+                plant_scores[name]["kaggle_score"] = max(
+                    plant_scores[name]["kaggle_score"], score
+                )
+
+        # Process PlantNet results
+        for result in (plantnet_results or [])[:5]:
+            if not isinstance(result, dict):
+                continue
+            name = result.get(
+                "scientificName", result.get("scientific_name", "")
+            ).strip()
+            if not name:
+                continue
+
+            score = result.get("certainty", result.get("score", 0))
+            if name not in plant_scores:
+                plant_scores[name] = {
+                    "scientificName": name,
+                    "commonName": result.get(
+                        "commonName", result.get("common_name", "")
+                    ),
+                    "family": result.get("family", ""),
+                    "kaggle_score": 0,
+                    "plantnet_score": score,
+                    "source": "plantnet",
+                    "usda_verified": False,
+                }
+            else:
+                plant_scores[name]["plantnet_score"] = max(
+                    plant_scores[name]["plantnet_score"], score
+                )
+                # Update source if both found
+                if plant_scores[name]["kaggle_score"] > 0:
+                    plant_scores[name]["source"] = "kaggle+plantnet"
+
+        # Calculate weighted scores
+        for name, data in plant_scores.items():
+            weighted = (data["kaggle_score"] * settings.KAGGLE_WEIGHT) + (
+                data["plantnet_score"] * settings.PLANTNET_WEIGHT
+            )
+            data["weighted_score"] = weighted
+            data["confidence"] = weighted
+
+            # USDA validation
+            usda_data = usda_service.find_by_scientific_name(name)
+            if usda_data:
+                data["usda_verified"] = True
+                data["usda_symbol"] = usda_data.get("symbol", "")
+                if not data["family"]:
+                    data["family"] = usda_data.get("family", "")
+                if not data["commonName"]:
+                    data["commonName"] = usda_data.get("common_name", "")
+                logger.info(f"✅ USDA verified: {name}")
+
+        # Sort by weighted score
+        combined_results = sorted(
+            plant_scores.values(), key=lambda x: x["weighted_score"], reverse=True
+        )
+        logger.info(
+            f"📊 Combined {len(combined_results)} unique plants with weighted scores"
+        )
+
+        # ═══════════════════════════════════════════════════════════════
+        # STEP 3.5: PLANT.ID ENRICHMENT - Get detailed plant info
+        # ═══════════════════════════════════════════════════════════════
+        if combined_results:
+            logger.info("📖 Enriching top plants with Plant.id details...")
+            combined_results = await plant_id_service.enrich_plant_data(
+                combined_results[:5]
             )
 
-            # Start with base info
-            enriched_result = {
-                "scientificName": scientific_name,
-                "commonName": result.get("commonName", result.get("common_name", "")),
-                "family": result.get("family", ""),
-                "confidence": result.get("certainty", result.get("score", 0)),
-                "source": result.get("source", "plantnet"),
-                "usda_verified": False,
-            }
-
-            # USDA validation and enrichment
-            usda_data = usda_service.find_by_scientific_name(scientific_name)
-            if usda_data:
-                enriched_result["usda_verified"] = True
-                enriched_result["usda_symbol"] = usda_data["symbol"]
-                # Fill missing info from USDA
-                if not enriched_result["family"]:
-                    enriched_result["family"] = usda_data["family"]
-                if not enriched_result["commonName"]:
-                    enriched_result["commonName"] = usda_data["common_name"]
-                logger.info(f"✅ USDA verified: {scientific_name}")
-            else:
-                logger.info(f"ℹ️ {scientific_name} not in USDA database")
-
-            # Cross-reference with PlantNet for additional info
-            if kaggle_results and plantnet_results:
-                for pn in plantnet_results:
-                    # Skip if pn is not a dict (could be string in some error cases)
-                    if not isinstance(pn, dict):
-                        continue
-                    pn_name = pn.get("scientific_name", "") or pn.get(
-                        "scientificName", ""
-                    )
-                    if pn_name and scientific_name.lower().startswith(
-                        pn_name.lower().split()[0] if pn_name else ""
-                    ):
-                        # Found matching genus, add PlantNet info
-                        enriched_result["genus"] = pn.get("genus", "")
-                        if pn.get("common_name") and not enriched_result["commonName"]:
-                            enriched_result["commonName"] = pn.get("common_name")
-                        break
-
-            combined_results.append(enriched_result)
-
-        logger.info(f"📊 Combined {len(combined_results)} plant results")
-
         # ═══════════════════════════════════════════════════════════════
-        # STEP 4: LLM RAG - Generate Turkish explanation
+        # STEP 4: LLM RAG - Generate Turkish explanation with full context
         # ═══════════════════════════════════════════════════════════════
         if combined_results:
             top_3 = combined_results[:3]
-            context_parts = []
 
-            for p in top_3:
-                confidence = p.get("confidence", 0)
+            # Build rich context for GPT-5
+            context_parts = []
+            context_parts.append(
+                f"📊 AĞIRLIKLAR: Kaggle={settings.KAGGLE_WEIGHT:.0%}, PlantNet={settings.PLANTNET_WEIGHT:.0%}\n"
+            )
+
+            for i, p in enumerate(top_3, 1):
                 usda_status = (
                     "✓ USDA Doğrulandı" if p.get("usda_verified") else "Doğrulanmadı"
                 )
 
+                # Base context
                 context = (
-                    f"- {p['scientificName']} ({p['commonName']})\n"
-                    f"  Aile: {p.get('family', 'Bilinmiyor')}\n"
-                    f"  Güven: {confidence:.1%}\n"
-                    f"  Kaynak: {p.get('source', 'unknown')}, {usda_status}"
+                    f"#{i} {p['scientificName']}\n"
+                    f"   Yerel İsim: {p.get('commonName', 'Bilinmiyor')}\n"
+                    f"   Aile: {p.get('family', 'Bilinmiyor')}\n"
+                    f"   Kaggle Skoru: {p.get('kaggle_score', 0):.1%}\n"
+                    f"   PlantNet Skoru: {p.get('plantnet_score', 0):.1%}\n"
+                    f"   AĞIRLIKLI SKOR: {p.get('weighted_score', 0):.1%}\n"
+                    f"   Kaynak: {p.get('source', 'unknown')}, {usda_status}"
                 )
+
+                # Add Plant.id description if available
+                if p.get("description"):
+                    context += f"\n   📖 Açıklama: {p['description'][:300]}..."
+
                 context_parts.append(context)
+                logger.info(
+                    f"  → #{i} {p['scientificName']}: weighted={p['weighted_score']:.1%} (K:{p['kaggle_score']:.1%}, P:{p['plantnet_score']:.1%})"
+                )
 
             context = "\n\n".join(context_parts)
 
-            # Build prompt based on user query
+            # Build prompt for GPT-5
             if safe_message.lower() in [
                 "identify",
                 "tanı",
                 "nedir",
                 "what is",
                 "bu ne",
+                "",
             ]:
                 prompt = (
                     f"Yüklenen bitkinin türünü belirle ve Türkçe açıkla.\n\n"
-                    f"BULUNAN BİTKİLER:\n{context}\n\n"
-                    f"GÖREV: Her bitki için kısa açıklama yap (isim, güven, özellikler)."
+                    f"BULUNAN BİTKİLER (Ağırlıklı Ensemble):\n{context}\n\n"
+                    f"GÖREV: En yüksek ağırlıklı skora sahip bitkiyi ana sonuç olarak belirle. "
+                    f"Eğer birden fazla kaynak aynı bitkiyi onaylıyorsa güvenilirlik yüksek. "
+                    f"Her bitki için kısa açıklama yap."
                 )
             else:
                 prompt = (
                     f"Kullanıcı sorusu: {safe_message}\n\n"
-                    f"BULUNAN BİTKİLER:\n{context}\n\n"
-                    f"GÖREV: Soruyu bu bitki bilgileriyle cevaplayarak Türkçe yanıt ver."
+                    f"BULUNAN BİTKİLER (Ağırlıklı Ensemble):\n{context}\n\n"
+                    f"GÖREV: Soruyu bu bitki bilgileriyle cevaplayarak Türkçe yanıt ver. "
+                    f"En yüksek ağırlıklı skora sahip bitkiyi referans al."
                 )
 
             response = await grok_service.generate_rag_response(prompt, context, top_3)

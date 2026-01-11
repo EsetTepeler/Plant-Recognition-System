@@ -45,6 +45,10 @@ class Settings(BaseSettings):
     PLANTNET_API_KEY: str = os.getenv("PLANTNET_API_KEY", "")
     PLANTNET_API_URL: str = "https://my-api.plantnet.org/v2/identify/all"
 
+    # Plant.id API (Primary plant identification)
+    PLANT_ID_KEY: str = os.getenv("PLANT_ID_KEY", "")
+    PLANT_ID_URL: str = os.getenv("PLANT_ID_URL", "https://plant.id/api/v3")
+
     # OpenRouter (Grok alternatifi - ücretsiz ve güçlü!)
     OPENROUTER_API_KEY: str = os.getenv("OPENROUTER_API_KEY", "")
     OPENROUTER_BASE_URL: str = os.getenv(
@@ -54,7 +58,14 @@ class Settings(BaseSettings):
         "OPENROUTER_MODEL", "nvidia/nemotron-nano-9b-v2:free"
     )
 
-    # Google AI Studio (optional) - prefer this if API key provided
+    # GitHub Models API (GPT-5) - PREFERRED LLM
+    GITHUB_TOKEN: str = os.getenv("GITHUB_TOKEN", "")
+    GITHUB_MODELS_BASE_URL: str = os.getenv(
+        "GITHUB_MODELS_BASE_URL", "https://models.inference.ai.azure.com"
+    )
+    GITHUB_MODELS_MODEL: str = os.getenv("GITHUB_MODELS_MODEL", "gpt-5")
+
+    # Google AI Studio (optional) - fallback if GitHub token not provided
     GOOGLE_AI_STUDIO_API_KEY: str = os.getenv("GOOGLE_AI_STUDIO_API_KEY", "")
     GOOGLE_AI_STUDIO_BASE_URL: str = os.getenv(
         "GOOGLE_AI_STUDIO_BASE_URL", "https://generativelanguage.googleapis.com/v1beta"
@@ -85,6 +96,10 @@ class Settings(BaseSettings):
 
     # Kaggle Notebook API (for PlantCLEF remote inference)
     KAGGLE_NOTEBOOK_URL: str = os.getenv("KAGGLE_NOTEBOOK_URL", "")
+
+    # Recognition Weights (Weighted Ensemble)
+    KAGGLE_WEIGHT: float = float(os.getenv("KAGGLE_WEIGHT", "0.6"))  # 60%
+    PLANTNET_WEIGHT: float = float(os.getenv("PLANTNET_WEIGHT", "0.4"))  # 40%
 
     # Security settings
     REQUIRE_API_KEY: bool = os.getenv("REQUIRE_API_KEY", "false").lower() == "true"
