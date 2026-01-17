@@ -59,7 +59,7 @@ api.interceptors.response.use(
 export const healthAPI = {
   // Get system health status
   getHealth: () => api.get('/health'),
-  
+
   // Get detailed status
   getStatus: () => api.get('/status'),
 };
@@ -67,13 +67,14 @@ export const healthAPI = {
 export const chatAPI = {
   // Text-only chat
   sendMessage: (data) => api.post('/chat', data),
-  
+
   // Chat with image
-  sendImageMessage: (formData) => 
+  sendImageMessage: (formData) =>
     api.post('/chat-with-image', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 180000, // 3 minutes for image processing
     }),
-  
+
   // Get conversation history
   getHistory: (sessionId) => api.get(`/conversation-history/${sessionId}`),
 };
@@ -83,8 +84,9 @@ export const recognitionAPI = {
   recognizePlant: (formData) =>
     api.post('/recognize', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 180000, // 3 minutes for image processing
     }),
-  
+
   // Analyze image (preprocessing)
   analyzeImage: (formData) =>
     api.post('/analyze-image', formData, {
@@ -96,11 +98,11 @@ export const recognitionAPI = {
 export const imageToFormData = (file, additionalData = {}) => {
   const formData = new FormData();
   formData.append('file', file);
-  
+
   Object.entries(additionalData).forEach(([key, value]) => {
     formData.append(key, value);
   });
-  
+
   return formData;
 };
 

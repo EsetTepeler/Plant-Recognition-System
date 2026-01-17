@@ -41,16 +41,15 @@ class PlantIdService:
             return None
 
         try:
-            # URL encode the scientific name
-            encoded_name = scientific_name.replace(" ", "%20")
-
             headers = {
                 "Api-Key": self.api_key,
                 "Content-Type": "application/json",
             }
 
             # Try the knowledge base endpoint
-            async with httpx.AsyncClient(timeout=15.0) as client:
+            async with httpx.AsyncClient(
+                timeout=float(settings.PLANT_ID_API_TIMEOUT)
+            ) as client:
                 # First try: KB search endpoint
                 response = await client.get(
                     f"{self.api_url}/kb/plants/name_search",

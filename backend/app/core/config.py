@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     API_V1_PREFIX: str = "/api/v1"
 
     # CORS - Frontend URL'leri
-    ALLOWED_ORIGINS: str = "http://localhost:3000,http://localhost:5173,http://127.0.0.1:3000,http://127.0.0.1:5173"
+    ALLOWED_ORIGINS: str = "http://localhost:8000,http://localhost:5173,http://127.0.0.1:8000,http://127.0.0.1:5173"
 
     @property
     def get_allowed_origins(self) -> List[str]:
@@ -110,6 +110,12 @@ class Settings(BaseSettings):
     ENABLE_IMAGE_SANITIZATION: bool = (
         os.getenv("ENABLE_IMAGE_SANITIZATION", "true").lower() == "true"
     )
+
+    # API Timeouts (seconds)
+    KAGGLE_API_TIMEOUT: int = int(os.getenv("KAGGLE_API_TIMEOUT", "10"))
+    PLANTNET_API_TIMEOUT: int = int(os.getenv("PLANTNET_API_TIMEOUT", "10"))
+    PLANT_ID_API_TIMEOUT: int = int(os.getenv("PLANT_ID_API_TIMEOUT", "8"))
+    LLM_API_TIMEOUT: int = int(os.getenv("LLM_API_TIMEOUT", "15"))
 
 
 settings = Settings()

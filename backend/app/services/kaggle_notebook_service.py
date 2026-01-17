@@ -26,7 +26,9 @@ class KaggleNotebookService:
 
     def __init__(self):
         self.notebook_url = os.getenv("KAGGLE_NOTEBOOK_URL", "").strip()
-        self.timeout = 60.0
+        from app.core.config import settings
+
+        self.timeout = float(settings.KAGGLE_API_TIMEOUT)
         self._available = False
         if self.notebook_url:
             logger.info(f"Kaggle URL loaded: {self.notebook_url[:50]}...")

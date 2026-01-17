@@ -58,7 +58,9 @@ class PlantNetService:
 
             params = {"api-key": self.api_key}
 
-            async with httpx.AsyncClient(timeout=30.0) as client:
+            async with httpx.AsyncClient(
+                timeout=float(settings.PLANTNET_API_TIMEOUT)
+            ) as client:
                 response = await client.post(
                     self.api_url, files=files, data=data, params=params
                 )
@@ -141,7 +143,9 @@ class PlantNetService:
             data = {"organs": organ}
             params = {"api-key": self.api_key}
 
-            async with httpx.AsyncClient(timeout=30.0) as client:
+            async with httpx.AsyncClient(
+                timeout=float(settings.PLANTNET_API_TIMEOUT)
+            ) as client:
                 response = await client.post(
                     self.api_url, files=files, data=data, params=params
                 )

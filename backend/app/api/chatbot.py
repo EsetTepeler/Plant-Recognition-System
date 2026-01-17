@@ -21,12 +21,9 @@ from app.core.rate_limiter import rate_limiter
 from app.core.config import settings
 from app.core.exceptions import (
     exception_to_http,
-    LLMServiceError,
-    ImageValidationError,
     PlantRecognitionException,
 )
 import uuid
-from datetime import datetime
 from PIL import Image
 import io
 import logging
@@ -43,6 +40,7 @@ class ChatMessage(BaseModel):
 class ChatRequest(BaseModel):
     message: str
     session_id: Optional[str] = None
+    conversation_history: Optional[list] = None  # Accept chat history from frontend
 
 
 @router.post("/chat")
@@ -123,37 +121,65 @@ async def chat_with_image(
         logger.info(f"🖼️ Image loaded: {pil_image.size}")
 
         # ═══════════════════════════════════════════════════════════════
-        # STEP 1: KAGGLE PLANTCLEF API - Image-based plant identification
+        # STEP 1 & 2: CONCURRENT API CALLS - Kaggle + PlantNet in parallel
         # ═══════════════════════════════════════════════════════════════
+        import asyncio
+
+        logger.info("🔍 Querying Kaggle PlantCLEF and PlantNet APIs concurrently...")
+
+        # Run both API calls in parallel for faster response
+        kaggle_task = kaggle_notebook_service.identify_plant(sanitized_bytes, top_k=5)
+        plantnet_task = plantnet_service.identify_plant(sanitized_bytes)
+
+        # Wait for both to complete (or fail)
+        results = await asyncio.gather(
+            kaggle_task, plantnet_task, return_exceptions=True
+        )
+
+        # Process Kaggle results
         kaggle_results = []
-        try:
-            logger.info("🔍 Querying Kaggle PlantCLEF API...")
-            kaggle_results = await kaggle_notebook_service.identify_plant(
-                sanitized_bytes, top_k=5
-            )
-            if kaggle_results:
-                logger.info(f"✅ Kaggle found {len(kaggle_results)} predictions")
-            else:
-                logger.warning("⚠️ Kaggle returned no results")
-        except Exception as e:
-            logger.warning(f"⚠️ Kaggle API failed: {e}")
+        if isinstance(results[0], Exception):
+            logger.warning(f"⚠️ Kaggle API failed: {results[0]}")
+        elif results[0]:
+            kaggle_results = results[0]
+            logger.info(f"✅ Kaggle found {len(kaggle_results)} predictions")
+        else:
+            logger.warning("⚠️ Kaggle returned no results")
 
-        # ═══════════════════════════════════════════════════════════════
-        # STEP 2: PLANTNET API - General plant information
-        # ═══════════════════════════════════════════════════════════════
+        # Process PlantNet results
         plantnet_results = []
-        try:
-            logger.info("🌱 Querying PlantNet API for general info...")
-            plantnet_results = await plantnet_service.identify_plant(sanitized_bytes)
-            if plantnet_results:
-                logger.info(f"✅ PlantNet found {len(plantnet_results)} results")
-            else:
-                logger.warning("⚠️ PlantNet returned no results")
-        except Exception as e:
-            logger.warning(f"⚠️ PlantNet API failed: {e}")
+        if isinstance(results[1], Exception):
+            logger.warning(f"⚠️ PlantNet API failed: {results[1]}")
+        elif results[1]:
+            plantnet_results = results[1]
+            logger.info(f"✅ PlantNet found {len(plantnet_results)} results")
+        else:
+            logger.warning("⚠️ PlantNet returned no results")
 
         # ═══════════════════════════════════════════════════════════════
-        # STEP 3: WEIGHTED ENSEMBLE - Combine results with configurable weights
+        # STEP 3: CONFIDENCE NORMALIZATION - Scale Kaggle scores
+        # ═══════════════════════════════════════════════════════════════
+        # PlantCLEF has 10,000+ species, so softmax probabilities are naturally low
+        # Normalize Kaggle scores: make highest score = 1.0, scale others proportionally
+        if kaggle_results:
+            max_kaggle_score = max(
+                r.get("certainty", r.get("score", 0)) for r in kaggle_results
+            )
+            if max_kaggle_score > 0:
+                logger.info(
+                    f"📊 Normalizing Kaggle scores (max: {max_kaggle_score:.1%} → 100%)"
+                )
+                for result in kaggle_results:
+                    original_score = result.get("certainty", result.get("score", 0))
+                    normalized_score = original_score / max_kaggle_score
+                    result["certainty"] = normalized_score
+                    result["score"] = normalized_score
+                    logger.debug(
+                        f"  {result.get('scientificName', 'Unknown')}: {original_score:.1%} → {normalized_score:.1%}"
+                    )
+
+        # ═══════════════════════════════════════════════════════════════
+        # STEP 4: WEIGHTED ENSEMBLE - Combine results with configurable weights
         # ═══════════════════════════════════════════════════════════════
         logger.info(
             f"🔄 Merging results with weights: Kaggle={settings.KAGGLE_WEIGHT:.0%}, PlantNet={settings.PLANTNET_WEIGHT:.0%}"
@@ -249,7 +275,7 @@ async def chat_with_image(
         )
 
         # ═══════════════════════════════════════════════════════════════
-        # STEP 3.5: PLANT.ID ENRICHMENT - Get detailed plant info
+        # STEP 5: PLANT.ID ENRICHMENT - Get detailed plant info
         # ═══════════════════════════════════════════════════════════════
         if combined_results:
             logger.info("📖 Enriching top plants with Plant.id details...")
@@ -258,7 +284,7 @@ async def chat_with_image(
             )
 
         # ═══════════════════════════════════════════════════════════════
-        # STEP 4: LLM RAG - Generate Turkish explanation with full context
+        # STEP 6: LLM RAG - Generate Turkish explanation with full context
         # ═══════════════════════════════════════════════════════════════
         if combined_results:
             top_3 = combined_results[:3]
@@ -285,9 +311,9 @@ async def chat_with_image(
                     f"   Kaynak: {p.get('source', 'unknown')}, {usda_status}"
                 )
 
-                # Add Plant.id description if available
+                # Add Plant.id description if available (full text for better context)
                 if p.get("description"):
-                    context += f"\n   📖 Açıklama: {p['description'][:300]}..."
+                    context += f"\n   📖 Açıklama: {p['description']}"
 
                 context_parts.append(context)
                 logger.info(
@@ -330,7 +356,7 @@ async def chat_with_image(
             logger.info("⚠️ No plants found")
 
         # ═══════════════════════════════════════════════════════════════
-        # STEP 5: Log to database & return response
+        # STEP 7: Log to database & return response
         # ═══════════════════════════════════════════════════════════════
         # Note: Database logging disabled (no PostgreSQL)
         logger.info(f"💾 Query processed: session {session_id}")

@@ -190,6 +190,11 @@ This system combines computer vision, vector databases, and large language model
 
 ## 🏗️ System Architecture
 
+![Plant Recognition System Architecture](docs/architecture.png)
+
+<details>
+<summary>📄 ASCII Diagram (Click to expand)</summary>
+
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                         USER INTERFACE                           │
@@ -243,6 +248,8 @@ This system combines computer vision, vector databases, and large language model
                      │   (Cache/Rate)   │    │ - XAI Grok   │
                      └──────────────────┘    └──────────────┘
 ```
+
+</details>
 
 ---
 
